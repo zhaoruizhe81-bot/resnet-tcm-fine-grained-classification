@@ -59,7 +59,7 @@ def train_one_epoch(
             if amp_enabled
             else nullcontext()
         )
-        with autocast_context():
+        with autocast_context:
             logits = model(images)
             loss = criterion(logits, labels)
 
