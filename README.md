@@ -51,14 +51,21 @@ conda activate caoyao-resnet
 
 ### 2. 安装依赖
 
-先安装 PyTorch 和 torchvision，再安装其余依赖：
+对你现在这台带 `RTX 4060 Ti` 的 Windows 机器，建议直接安装 PyTorch 官方 CUDA 12.6 轮子，再安装项目依赖：
+
+```powershell
+pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
+pip install -r requirements.txt
+```
+
+如果只是想走 CPU，可以改成：
 
 ```powershell
 pip install torch torchvision
 pip install -r requirements.txt
 ```
 
-如果你想强制使用某个 CUDA 版本的官方轮子，可以根据 PyTorch 官方安装页替换上一条命令。
+之所以这里不直接推荐通用命令，是因为在这台机器上实测通用安装容易落到 `+cpu` 版本，导致无法调用显卡。
 
 ### 3. 快速验证环境
 
