@@ -1,0 +1,25 @@
+project_name: 基于 ResNet 的中药细粒度分类
+seed: 42
+data:
+  root: D:/project/caoyao/50类中草药数据集/split_dataset
+  image_size: 224
+  batch_size: 32
+  num_workers: null
+  pin_memory: true
+model:
+  name: resnet50
+  pretrained: true
+  dropout: 0.2
+train:
+  epochs: 20
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  label_smoothing: 0.1
+  mixed_precision: true
+  limit_train_batches: null
+  limit_val_batches: null
+  limit_test_batches: null
+  checkpoint: null
+output:
+  root_dir: outputs
+  run_name: resnet50_tcm
