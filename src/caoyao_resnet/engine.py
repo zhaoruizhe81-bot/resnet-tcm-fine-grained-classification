@@ -30,27 +30,46 @@ def train_one_epoch(
     device: torch.device,
     use_amp: bool,
     limit_batches: int | None = None,
+    show_progress: bool = True,
+    progress_position: int = 0,
 ) -> dict[str, float]:
     model.train()
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp and device.type == "cuda")
+    amp_enabled = use_amp and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled) if device.type == "cuda" else None
     loss_sum = 0.0
     correct = 0
     total = 0
 
-    progress = tqdm(_iter_batches(loader, limit_batches), total=limit_batches or len(loader), desc="train", leave=False)
+    progress = tqdm(
+        _iter_batches(loader, limit_batches),
+        total=limit_batches or len(loader),
+        desc="train",
+        leave=False,
+        disable=not show_progress,
+        position=progress_position,
+        dynamic_ncols=True,
+    )
     for _, (images, labels) in progress:
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
-        autocast_context = torch.cuda.amp.autocast if use_amp and device.type == "cuda" else nullcontext
+        autocast_context = (
+            torch.amp.autocast(device_type="cuda", enabled=amp_enabled)
+            if amp_enabled
+            else nullcontext()
+        )
         with autocast_context():
             logits = model(images)
             loss = criterion(logits, labels)
 
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
 
         batch_size = labels.size(0)
         loss_sum += loss.item() * batch_size
@@ -74,13 +93,23 @@ def evaluate(
     device: torch.device,
     split_name: str,
     limit_batches: int | None = None,
+    show_progress: bool = True,
+    progress_position: int = 0,
 ) -> dict[str, float]:
     model.eval()
     loss_sum = 0.0
     correct = 0
     total = 0
 
-    progress = tqdm(_iter_batches(loader, limit_batches), total=limit_batches or len(loader), desc=split_name, leave=False)
+    progress = tqdm(
+        _iter_batches(loader, limit_batches),
+        total=limit_batches or len(loader),
+        desc=split_name,
+        leave=False,
+        disable=not show_progress,
+        position=progress_position,
+        dynamic_ncols=True,
+    )
     for _, (images, labels) in progress:
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)

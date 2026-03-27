@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -24,54 +25,69 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    logger = None
 
-    import torch
-    from torch import nn
+    try:
+        import torch
+        from torch import nn
 
-    from caoyao_resnet import build_model, create_dataloaders, evaluate, get_device
+        from caoyao_resnet import build_model, create_dataloaders, evaluate, get_device, setup_logger
 
-    device = get_device(args.device)
-    checkpoint = torch.load(args.checkpoint, map_location=device)
-    config = checkpoint["config"]
-    if args.data_root:
-        config["data"]["root"] = args.data_root
-    if args.batch_size is not None:
-        config["data"]["batch_size"] = args.batch_size
-    if args.num_workers is not None:
-        config["data"]["num_workers"] = args.num_workers
+        checkpoint_path = Path(args.checkpoint)
+        logger = setup_logger(
+            f"evaluate.{checkpoint_path.parent.name}.{args.split}",
+            checkpoint_path.parent / f"evaluate_{args.split}.log",
+            level=logging.INFO,
+        )
+        logger.info("评估脚本启动")
+        logger.info("Checkpoint: %s", checkpoint_path)
 
-    dataloaders, class_names, _ = create_dataloaders(
-        data_root=config["data"]["root"],
-        image_size=config["data"]["image_size"],
-        batch_size=config["data"]["batch_size"],
-        num_workers=config["data"]["num_workers"],
-        pin_memory=config["data"]["pin_memory"],
-        device=device,
-    )
-    if args.split not in dataloaders:
-        raise ValueError(f"当前数据集中不存在 {args.split} 切分")
+        device = get_device(args.device)
+        logger.info("运行设备: %s", device)
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        config = checkpoint["config"]
+        if args.data_root:
+            config["data"]["root"] = args.data_root
+        if args.batch_size is not None:
+            config["data"]["batch_size"] = args.batch_size
+        if args.num_workers is not None:
+            config["data"]["num_workers"] = args.num_workers
 
-    model = build_model(
-        name=checkpoint["model_name"],
-        num_classes=len(class_names),
-        pretrained=False,
-        dropout=config["model"]["dropout"],
-    ).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+        dataloaders, class_names, dataset_sizes = create_dataloaders(
+            data_root=config["data"]["root"],
+            image_size=config["data"]["image_size"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            pin_memory=config["data"]["pin_memory"],
+            device=device,
+        )
+        logger.info("数据目录: %s", config["data"]["root"])
+        logger.info("数据集样本数: %s", dataset_sizes)
+        if args.split not in dataloaders:
+            raise ValueError(f"当前数据集中不存在 {args.split} 切分")
 
-    criterion = nn.CrossEntropyLoss()
-    metrics = evaluate(
-        model=model,
-        loader=dataloaders[args.split],
-        criterion=criterion,
-        device=device,
-        split_name=args.split,
-        limit_batches=args.limit_batches,
-    )
-    print(
-        f"{args.split} loss={metrics['loss']:.4f} "
-        f"{args.split} acc={metrics['accuracy']:.4f}"
-    )
+        model = build_model(
+            name=checkpoint["model_name"],
+            num_classes=len(class_names),
+            pretrained=False,
+            dropout=config["model"]["dropout"],
+        ).to(device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+        criterion = nn.CrossEntropyLoss()
+        metrics = evaluate(
+            model=model,
+            loader=dataloaders[args.split],
+            criterion=criterion,
+            device=device,
+            split_name=args.split,
+            limit_batches=args.limit_batches,
+        )
+        logger.info("%s | loss=%.4f acc=%.4f", args.split, metrics["loss"], metrics["accuracy"])
+    except Exception:
+        if logger is not None:
+            logger.exception("评估脚本执行失败")
+        raise
 
 
 if __name__ == "__main__":

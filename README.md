@@ -35,6 +35,8 @@
 - 自动读取 `ImageFolder` 目录结构
 - 自动保存 `best.pt` 和 `last.pt`
 - 自动输出训练历史、数据集摘要、测试集指标
+- 训练、评估、预测全流程日志
+- 训练双层进度条（epoch 总进度 + train/val/test batch 进度）
 - 支持单图 Top-K 预测
 - 支持快速验证模式，只跑前几个 batch 检查环境
 
@@ -72,7 +74,7 @@ pip install -r requirements.txt
 第一次建议先跑一个超短的 sanity check：
 
 ```powershell
-python train.py --epochs 1 --batch-size 8 --limit-train-batches 2 --limit-val-batches 1 --limit-test-batches 1
+python train.py --epochs 1 --batch-size 8 --model-name resnet18 --limit-train-batches 2 --limit-val-batches 1 --limit-test-batches 1
 ```
 
 这条命令只会跑极少量 batch，用来确认数据读取、模型前向、保存 checkpoint 都正常。
@@ -95,13 +97,13 @@ python train.py --model-name resnet101
 ### 测试集评估
 
 ```powershell
-python evaluate.py --checkpoint outputs/resnet50_tcm/best.pt --split test
+python evaluate.py --checkpoint outputs/resnet18_tcm/best.pt --split test
 ```
 
 ### 单图预测
 
 ```powershell
-python predict.py --checkpoint outputs/resnet50_tcm/best.pt --image "D:\project\caoyao\50类中草药数据集\test.jpg" --top-k 5
+python predict.py --checkpoint outputs/resnet18_tcm/best.pt --image "D:\project\caoyao\50类中草药数据集\split_dataset\test\乌梅\1.jpg" --top-k 5
 ```
 
 ## 配置说明
@@ -119,16 +121,26 @@ python predict.py --checkpoint outputs/resnet50_tcm/best.pt --image "D:\project\
 
 ## 输出结果
 
-训练完成后会在 `outputs/resnet50_tcm/` 下生成：
+训练完成后会在对应实验目录下生成，例如 `outputs/resnet18_tcm/` 或 `outputs/resnet50_tcm/`：
 
 - `best.pt`：验证集最优模型
 - `last.pt`：最后一个 epoch 模型
 - `history.json`：训练历史
 - `dataset_summary.json`：类别与样本统计
 - `test_metrics.json`：测试集评估结果
+- `train.log`：训练完整日志
+- `evaluate_<split>.log`：评估日志
+- `predict_<image_stem>.log`：预测日志
 
 ## 备注
 
 - Windows 下 `num_workers` 默认会自动回落到 `0`，优先保证兼容性。
 - 如果你把数据目录改到别的位置，可通过 `--data-root` 参数覆盖。
-- 如果你要断点续训，可用 `--resume outputs/resnet50_tcm/last.pt`。
+- 如果你要断点续训，可用 `--resume outputs/resnet50_tcm/last.pt`，或者改成对应模型的目录名。
+- 如果未显式传 `--run-name`，输出目录会默认跟随当前模型名，例如 `resnet18_tcm`。
+- Windows 上更新代码后可直接执行：
+
+```powershell
+git pull
+python train.py --help
+```

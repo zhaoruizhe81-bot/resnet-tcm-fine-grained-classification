@@ -29,11 +29,22 @@ def default_num_workers(explicit: int | None) -> int:
     return 0 if platform.system().lower().startswith("win") else 4
 
 
+def default_run_name(model_name: str) -> str:
+    return f"{model_name}_tcm"
+
+
 def resolve_runtime_config(
     raw_config: dict[str, Any],
     overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     config = merge_dict(raw_config, overrides or {})
+    requested_run_name = ((overrides or {}).get("output") or {}).get("run_name")
+    raw_default_run_name = default_run_name(raw_config["model"]["name"])
+    current_run_name = config["output"].get("run_name")
+
+    if not requested_run_name and (not current_run_name or current_run_name == raw_default_run_name):
+        config["output"]["run_name"] = default_run_name(config["model"]["name"])
+
     config["data"]["root"] = str(Path(config["data"]["root"]))
     config["data"]["num_workers"] = default_num_workers(config["data"].get("num_workers"))
     config["output"]["root_dir"] = str(Path(config["output"]["root_dir"]))

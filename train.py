@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
+
+from tqdm import tqdm
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
@@ -60,113 +63,124 @@ def build_overrides(args: argparse.Namespace) -> dict:
 
 def main() -> None:
     args = parse_args()
+    logger = None
 
-    import torch
-    from torch import nn
+    try:
+        import torch
+        from torch import nn
 
-    from caoyao_resnet import build_model, create_dataloaders, evaluate, get_device, set_seed, train_one_epoch
-    from caoyao_resnet.config import load_config, resolve_runtime_config, save_config
-    from caoyao_resnet.utils import checkpoint_payload, ensure_dir, save_json
+        from caoyao_resnet import build_model, create_dataloaders, evaluate, get_device, set_seed, setup_logger, train_one_epoch
+        from caoyao_resnet.config import load_config, resolve_runtime_config, save_config
+        from caoyao_resnet.utils import checkpoint_payload, ensure_dir, save_json
 
-    config = resolve_runtime_config(load_config(args.config), build_overrides(args))
-    set_seed(config["seed"])
+        config = resolve_runtime_config(load_config(args.config), build_overrides(args))
+        run_dir = ensure_dir(Path(config["output"]["root_dir"]) / config["output"]["run_name"])
+        logger = setup_logger(f"train.{config['output']['run_name']}", run_dir / "train.log")
+        logger.info("训练脚本启动")
+        logger.info("配置文件: %s", args.config)
+        logger.info("输出目录: %s", run_dir)
+        logger.info("数据目录: %s", config["data"]["root"])
 
-    device = get_device(args.device)
-    dataloaders, class_names, dataset_sizes = create_dataloaders(
-        data_root=config["data"]["root"],
-        image_size=config["data"]["image_size"],
-        batch_size=config["data"]["batch_size"],
-        num_workers=config["data"]["num_workers"],
-        pin_memory=config["data"]["pin_memory"],
-        device=device,
-    )
+        set_seed(config["seed"])
+        device = get_device(args.device)
+        logger.info("Torch 版本: %s", torch.__version__)
+        logger.info("运行设备: %s", device)
+        if device.type == "cuda":
+            logger.info("CUDA 设备: %s", torch.cuda.get_device_name(0))
 
-    model = build_model(
-        name=config["model"]["name"],
-        num_classes=len(class_names),
-        pretrained=config["model"]["pretrained"],
-        dropout=config["model"]["dropout"],
-    ).to(device)
-
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=config["train"]["learning_rate"],
-        weight_decay=config["train"]["weight_decay"],
-    )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=config["train"]["epochs"],
-    )
-    criterion = nn.CrossEntropyLoss(label_smoothing=config["train"]["label_smoothing"])
-
-    start_epoch = 1
-    best_accuracy = 0.0
-    resume_path = config["train"]["checkpoint"]
-    if resume_path:
-        checkpoint = torch.load(resume_path, map_location=device)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        if checkpoint.get("optimizer_state_dict"):
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        start_epoch = checkpoint["epoch"] + 1
-        best_accuracy = checkpoint.get("metrics", {}).get("val_accuracy", 0.0)
-
-    run_dir = ensure_dir(Path(config["output"]["root_dir"]) / config["output"]["run_name"])
-    save_config(run_dir / "resolved_config.yaml", config)
-    save_json(
-        run_dir / "dataset_summary.json",
-        {
-            "class_count": len(class_names),
-            "class_names": class_names,
-            "dataset_sizes": dataset_sizes,
-        },
-    )
-
-    history: list[dict] = []
-    for epoch in range(start_epoch, config["train"]["epochs"] + 1):
-        train_metrics = train_one_epoch(
-            model=model,
-            loader=dataloaders["train"],
-            optimizer=optimizer,
-            criterion=criterion,
+        dataloaders, class_names, dataset_sizes = create_dataloaders(
+            data_root=config["data"]["root"],
+            image_size=config["data"]["image_size"],
+            batch_size=config["data"]["batch_size"],
+            num_workers=config["data"]["num_workers"],
+            pin_memory=config["data"]["pin_memory"],
             device=device,
-            use_amp=config["train"]["mixed_precision"],
-            limit_batches=config["train"]["limit_train_batches"],
         )
-        val_metrics = evaluate(
-            model=model,
-            loader=dataloaders["val"],
-            criterion=criterion,
-            device=device,
-            split_name="val",
-            limit_batches=config["train"]["limit_val_batches"],
+        logger.info("类别数: %s", len(class_names))
+        logger.info("数据集样本数: %s", dataset_sizes)
+
+        model = build_model(
+            name=config["model"]["name"],
+            num_classes=len(class_names),
+            pretrained=config["model"]["pretrained"],
+            dropout=config["model"]["dropout"],
+        ).to(device)
+
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=config["train"]["learning_rate"],
+            weight_decay=config["train"]["weight_decay"],
         )
-        scheduler.step()
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=config["train"]["epochs"],
+        )
+        criterion = nn.CrossEntropyLoss(label_smoothing=config["train"]["label_smoothing"])
 
-        epoch_record = {
-            "epoch": epoch,
-            "train_loss": train_metrics["loss"],
-            "train_accuracy": train_metrics["accuracy"],
-            "val_loss": val_metrics["loss"],
-            "val_accuracy": val_metrics["accuracy"],
-            "learning_rate": optimizer.param_groups[0]["lr"],
-        }
-        history.append(epoch_record)
-        save_json(run_dir / "history.json", {"history": history})
+        start_epoch = 1
+        best_accuracy = 0.0
+        resume_path = config["train"]["checkpoint"]
+        if resume_path:
+            logger.info("恢复训练 checkpoint: %s", resume_path)
+            checkpoint = torch.load(resume_path, map_location=device)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            if checkpoint.get("optimizer_state_dict"):
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            best_accuracy = checkpoint.get("metrics", {}).get("val_accuracy", 0.0)
 
-        torch.save(
-            checkpoint_payload(
+        save_config(run_dir / "resolved_config.yaml", config)
+        save_json(
+            run_dir / "dataset_summary.json",
+            {
+                "class_count": len(class_names),
+                "class_names": class_names,
+                "dataset_sizes": dataset_sizes,
+                "data_root": config["data"]["root"],
+            },
+        )
+
+        history: list[dict] = []
+        epoch_progress = tqdm(
+            range(start_epoch, config["train"]["epochs"] + 1),
+            total=max(0, config["train"]["epochs"] - start_epoch + 1),
+            desc="epochs",
+            position=0,
+            dynamic_ncols=True,
+        )
+        for epoch in epoch_progress:
+            train_metrics = train_one_epoch(
                 model=model,
+                loader=dataloaders["train"],
                 optimizer=optimizer,
-                epoch=epoch,
-                metrics=epoch_record,
-                config=config,
-                class_names=class_names,
-            ),
-            run_dir / "last.pt",
-        )
+                criterion=criterion,
+                device=device,
+                use_amp=config["train"]["mixed_precision"],
+                limit_batches=config["train"]["limit_train_batches"],
+                progress_position=1,
+            )
+            val_metrics = evaluate(
+                model=model,
+                loader=dataloaders["val"],
+                criterion=criterion,
+                device=device,
+                split_name="val",
+                limit_batches=config["train"]["limit_val_batches"],
+                progress_position=1,
+            )
+            scheduler.step()
 
-        if val_metrics["accuracy"] >= best_accuracy:
-            best_accuracy = val_metrics["accuracy"]
+            epoch_record = {
+                "epoch": epoch,
+                "train_loss": train_metrics["loss"],
+                "train_accuracy": train_metrics["accuracy"],
+                "val_loss": val_metrics["loss"],
+                "val_accuracy": val_metrics["accuracy"],
+                "learning_rate": optimizer.param_groups[0]["lr"],
+            }
+            history.append(epoch_record)
+            save_json(run_dir / "history.json", {"history": history})
+
             torch.save(
                 checkpoint_payload(
                     model=model,
@@ -176,30 +190,63 @@ def main() -> None:
                     config=config,
                     class_names=class_names,
                 ),
-                run_dir / "best.pt",
+                run_dir / "last.pt",
             )
 
-        print(
-            f"Epoch {epoch:02d}/{config['train']['epochs']} "
-            f"train_loss={train_metrics['loss']:.4f} train_acc={train_metrics['accuracy']:.4f} "
-            f"val_loss={val_metrics['loss']:.4f} val_acc={val_metrics['accuracy']:.4f}"
-        )
+            if val_metrics["accuracy"] >= best_accuracy:
+                best_accuracy = val_metrics["accuracy"]
+                torch.save(
+                    checkpoint_payload(
+                        model=model,
+                        optimizer=optimizer,
+                        epoch=epoch,
+                        metrics=epoch_record,
+                        config=config,
+                        class_names=class_names,
+                    ),
+                    run_dir / "best.pt",
+                )
+                logger.info("保存最佳模型: %s", run_dir / "best.pt")
 
-    if "test" in dataloaders:
-        best_checkpoint = torch.load(run_dir / "best.pt", map_location=device)
-        model.load_state_dict(best_checkpoint["model_state_dict"])
-        test_metrics = evaluate(
-            model=model,
-            loader=dataloaders["test"],
-            criterion=criterion,
-            device=device,
-            split_name="test",
-            limit_batches=config["train"]["limit_test_batches"],
-        )
-        save_json(run_dir / "test_metrics.json", test_metrics)
-        print(f"Test loss={test_metrics['loss']:.4f} test_acc={test_metrics['accuracy']:.4f}")
+            epoch_progress.set_postfix(
+                train_acc=f"{train_metrics['accuracy']:.4f}",
+                val_acc=f"{val_metrics['accuracy']:.4f}",
+            )
+            logger.info(
+                "Epoch %02d/%02d | train_loss=%.4f train_acc=%.4f | val_loss=%.4f val_acc=%.4f | lr=%.6f",
+                epoch,
+                config["train"]["epochs"],
+                train_metrics["loss"],
+                train_metrics["accuracy"],
+                val_metrics["loss"],
+                val_metrics["accuracy"],
+                optimizer.param_groups[0]["lr"],
+            )
 
-    print(f"训练完成，结果保存在: {run_dir}")
+        if "test" in dataloaders:
+            best_checkpoint = torch.load(run_dir / "best.pt", map_location=device)
+            model.load_state_dict(best_checkpoint["model_state_dict"])
+            test_metrics = evaluate(
+                model=model,
+                loader=dataloaders["test"],
+                criterion=criterion,
+                device=device,
+                split_name="test",
+                limit_batches=config["train"]["limit_test_batches"],
+                progress_position=1,
+            )
+            save_json(run_dir / "test_metrics.json", test_metrics)
+            logger.info(
+                "Test | loss=%.4f acc=%.4f",
+                test_metrics["loss"],
+                test_metrics["accuracy"],
+            )
+
+        logger.info("训练完成，结果保存在: %s", run_dir)
+    except Exception:
+        if logger is not None:
+            logger.exception("训练脚本执行失败")
+        raise
 
 
 if __name__ == "__main__":

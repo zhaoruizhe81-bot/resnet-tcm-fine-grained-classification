@@ -1,6 +1,7 @@
 from .config import load_config, resolve_runtime_config
 from .data import create_dataloaders, resolve_split_root
 from .engine import evaluate, predict_topk, train_one_epoch
+from .logging_utils import safe_filename, setup_logger
 from .models import build_model
 from .utils import ensure_dir, get_device, save_json, set_seed
 
@@ -14,7 +15,9 @@ __all__ = [
     "predict_topk",
     "resolve_runtime_config",
     "resolve_split_root",
+    "safe_filename",
     "save_json",
     "set_seed",
+    "setup_logger",
     "train_one_epoch",
 ]
