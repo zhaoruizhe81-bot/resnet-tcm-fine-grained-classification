@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import platform
+import socket
 import sys
 import tempfile
 from datetime import datetime
@@ -10,6 +11,7 @@ from typing import Any
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 from PIL import Image
 
@@ -54,11 +56,12 @@ def apply_theme() -> None:
         <style>
         .stApp {
           background:
-            radial-gradient(circle at top left, rgba(194, 151, 92, 0.15), transparent 30%),
-            linear-gradient(180deg, #f7f2e8 0%, #f0e6d2 100%);
+            radial-gradient(circle at top left, rgba(194, 151, 92, 0.22), transparent 28%),
+            radial-gradient(circle at right center, rgba(132, 84, 32, 0.10), transparent 22%),
+            linear-gradient(180deg, #f7f2e8 0%, #efe4cf 100%);
         }
         .block-container {
-          padding-top: 1.5rem;
+          padding-top: 1.2rem;
           padding-bottom: 2rem;
         }
         div[data-testid="stMetricValue"] {
@@ -70,6 +73,83 @@ def apply_theme() -> None:
           border-radius: 18px;
           padding: 1rem 1.2rem;
           box-shadow: 0 12px 40px rgba(93, 64, 24, 0.08);
+        }
+        .hero-shell {
+          background:
+            linear-gradient(135deg, rgba(92, 56, 24, 0.97), rgba(134, 91, 43, 0.93));
+          border-radius: 28px;
+          padding: 2rem 2rem 1.7rem 2rem;
+          color: #fff8ef;
+          box-shadow: 0 18px 60px rgba(70, 42, 18, 0.28);
+          border: 1px solid rgba(255, 244, 227, 0.18);
+          position: relative;
+          overflow: hidden;
+        }
+        .hero-shell:before {
+          content: "";
+          position: absolute;
+          top: -60px;
+          right: -40px;
+          width: 240px;
+          height: 240px;
+          border-radius: 50%;
+          background: rgba(255, 221, 169, 0.12);
+        }
+        .hero-title {
+          font-size: 2.25rem;
+          font-weight: 800;
+          letter-spacing: 0.02em;
+          margin-bottom: 0.5rem;
+        }
+        .hero-subtitle {
+          font-size: 1rem;
+          line-height: 1.8;
+          color: rgba(255, 246, 233, 0.92);
+          max-width: 780px;
+          margin-bottom: 1rem;
+        }
+        .hero-chip-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.55rem;
+          margin-bottom: 1rem;
+        }
+        .hero-chip {
+          display: inline-block;
+          padding: 0.42rem 0.8rem;
+          border-radius: 999px;
+          background: rgba(255, 244, 227, 0.13);
+          border: 1px solid rgba(255, 244, 227, 0.18);
+          font-size: 0.9rem;
+        }
+        .hero-grid {
+          display: grid;
+          grid-template-columns: 1.8fr 1fr;
+          gap: 1rem;
+          align-items: stretch;
+        }
+        .hero-panel {
+          background: rgba(255, 250, 242, 0.08);
+          border: 1px solid rgba(255, 244, 227, 0.14);
+          border-radius: 20px;
+          padding: 1rem 1.1rem;
+        }
+        .hero-panel h4 {
+          margin: 0 0 0.8rem 0;
+          font-size: 1rem;
+        }
+        .hero-panel ul {
+          margin: 0;
+          padding-left: 1.1rem;
+          line-height: 1.8;
+        }
+        .section-label {
+          font-size: 0.82rem;
+          font-weight: 700;
+          color: #8c5b28;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          margin-bottom: 0.3rem;
         }
         </style>
         """,
@@ -105,6 +185,145 @@ def _counts_dataframe(counts: dict[str, int]) -> pd.DataFrame:
     if dataframe.empty:
         return pd.DataFrame(columns=["class_name", "count"])
     return dataframe.sort_values("count", ascending=False)
+
+
+def _lan_urls(port: int = 8507) -> list[str]:
+    urls = [f"http://127.0.0.1:{port}"]
+    candidates: set[str] = set()
+    try:
+        hostname = socket.gethostname()
+        for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
+            if family == socket.AF_INET:
+                ip = sockaddr[0]
+                if not ip.startswith("127."):
+                    candidates.add(ip)
+    except OSError:
+        pass
+
+    for ip in sorted(candidates):
+        urls.append(f"http://{ip}:{port}")
+    return urls
+
+
+def _build_workflow_figure() -> go.Figure:
+    nodes = [
+        ("数据集", 0.02, 0.70, "#8c5b28"),
+        ("模型训练", 0.22, 0.70, "#a86c2d"),
+        ("最优权重", 0.42, 0.70, "#c98739"),
+        ("图片识别", 0.64, 0.84, "#7e9c49"),
+        ("批量识别", 0.64, 0.68, "#679b95"),
+        ("视频抽帧", 0.64, 0.52, "#5e7bb0"),
+        ("历史记录", 0.84, 0.68, "#6d5aa8"),
+        ("结果导出", 0.84, 0.52, "#bf6d3f"),
+    ]
+    edges = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (2, 4),
+        (2, 5),
+        (3, 6),
+        (4, 6),
+        (5, 6),
+        (4, 7),
+        (5, 7),
+    ]
+
+    fig = go.Figure()
+    for start, end in edges:
+        _, x0, y0, _ = nodes[start]
+        _, x1, y1, _ = nodes[end]
+        fig.add_annotation(
+            x=x1,
+            y=y1,
+            ax=x0,
+            ay=y0,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            showarrow=True,
+            arrowhead=3,
+            arrowwidth=2,
+            arrowcolor="rgba(107,63,29,0.55)",
+        )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[item[1] for item in nodes],
+            y=[item[2] for item in nodes],
+            mode="markers+text",
+            text=[item[0] for item in nodes],
+            textposition="middle center",
+            textfont={"size": 13, "color": "white"},
+            marker={
+                "size": [72, 84, 82, 76, 76, 76, 84, 84],
+                "color": [item[3] for item in nodes],
+                "line": {"width": 2, "color": "rgba(255,255,255,0.65)"},
+            },
+            hoverinfo="skip",
+        )
+    )
+    fig.update_layout(
+        title="项目流程总览",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.66)",
+        margin={"l": 16, "r": 16, "t": 56, "b": 16},
+        height=320,
+        xaxis={"visible": False, "range": [0, 1]},
+        yaxis={"visible": False, "range": [0.35, 0.95]},
+    )
+    return fig
+
+
+def _build_run_overview_chart(runs: list[dict[str, Any]]) -> go.Figure:
+    dataframe = pd.DataFrame(runs)
+    if dataframe.empty:
+        return go.Figure()
+
+    fig = px.bar(
+        dataframe,
+        x="run_name",
+        y="best_val_accuracy",
+        color="model_name",
+        text="best_val_accuracy",
+        title="实验最佳验证准确率对比",
+    )
+    fig.update_traces(texttemplate="%{text:.4f}", textposition="outside")
+    fig.update_layout(
+        height=330,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.66)",
+        margin={"l": 16, "r": 16, "t": 56, "b": 16},
+        yaxis_title="Best Val Accuracy",
+        xaxis_title="Run Name",
+    )
+    return fig
+
+
+def _build_history_pie(stats: dict[str, Any]) -> go.Figure:
+    by_type = stats.get("by_type", {})
+    dataframe = pd.DataFrame(
+        [{"record_type": key, "count": value} for key, value in by_type.items()]
+    )
+    if dataframe.empty:
+        return go.Figure()
+
+    fig = px.pie(
+        dataframe,
+        names="record_type",
+        values="count",
+        hole=0.55,
+        title="识别历史类型分布",
+        color="record_type",
+        color_discrete_sequence=["#8c5b28", "#6e9a64", "#557da8"],
+    )
+    fig.update_layout(
+        height=330,
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin={"l": 16, "r": 16, "t": 56, "b": 16},
+    )
+    return fig
 
 
 @st.cache_data(show_spinner=False)
@@ -219,26 +438,52 @@ def render_home_page() -> None:
     context = sidebar_model_context(require_model=False)
     bundle = get_active_bundle(context) if context["checkpoint_path"] else None
 
-    st.title("中药细粒度分类智能识别平台")
-    st.caption("基于 ResNet 的中药图片与视频识别、训练结果分析和项目闭环展示系统。")
-
     stats = fetch_history_stats(DEFAULT_DB_PATH)
     runs = cached_training_runs()
+    lan_urls = _lan_urls(8507)
+
+    st.markdown(
+        f"""
+        <div class="hero-shell">
+          <div class="hero-title">中药细粒度分类智能识别平台</div>
+          <div class="hero-subtitle">
+            面向课程毕设展示的综合型项目成品。平台融合了 ResNet 模型训练、图片识别、批量识别、视频抽帧识别、
+            训练结果看板、数据集概览和 SQLite 历史记录管理，形成从“数据 -> 训练 -> 推理 -> 追踪 -> 导出”的完整闭环。
+          </div>
+          <div class="hero-chip-row">
+            <span class="hero-chip">ResNet 多模型支持</span>
+            <span class="hero-chip">Streamlit 多页面交互</span>
+            <span class="hero-chip">图片 / 批量 / 视频识别</span>
+            <span class="hero-chip">SQLite 历史记录</span>
+            <span class="hero-chip">局域网访问已配置</span>
+          </div>
+          <div class="hero-grid">
+            <div class="hero-panel">
+              <h4>项目亮点</h4>
+              <ul>
+                <li>单机课程项目升级为具有展示端、推理层和存储层的完整系统</li>
+                <li>视频识别采用抽帧汇总策略，兼顾展示效果与实现复杂度</li>
+                <li>训练日志、评估日志、预测日志和 Web 识别历史全部可追踪</li>
+              </ul>
+            </div>
+            <div class="hero-panel">
+              <h4>局域网访问地址</h4>
+              <ul>
+                {''.join(f'<li>{url}</li>' for url in lan_urls)}
+              </ul>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.caption("建议在 Windows 上直接运行 `streamlit run app.py`，然后通过上面的局域网地址从同网段设备访问。")
+
     cols = st.columns(4)
     cols[0].metric("已发现模型", len(context["discovered_checkpoints"]))
     cols[1].metric("训练实验数", len(runs))
     cols[2].metric("历史识别记录", stats["total_records"])
     cols[3].metric("当前模型类别数", len(bundle.class_names) if bundle else 0)
-
-    st.markdown(
-        """
-        <div class="app-card">
-        <h3>平台能力概览</h3>
-        <p>这个 Web 应用把原来的 CLI 训练项目升级成了课程展示型系统，包含模型选择、单图识别、批量识别、视频抽帧识别、训练结果看板、数据集概览与历史记录管理。</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     link_cols = st.columns(4)
     link_cols[0].page_link("pages/01_image_recognition.py", label="进入单图识别", icon="🖼️")
@@ -246,26 +491,65 @@ def render_home_page() -> None:
     link_cols[2].page_link("pages/03_video_recognition.py", label="进入视频识别", icon="🎬")
     link_cols[3].page_link("pages/05_training_dashboard.py", label="查看训练看板", icon="📈")
 
-    left, right = st.columns([1.2, 1])
-    with left:
-        st.subheader("系统架构")
-        st.markdown(
-            """
-            - 前端：Streamlit 多页面交互界面
-            - 服务层：模型加载、图片推理、视频抽帧推理、训练结果读取
-            - 存储层：SQLite 历史记录库 + `outputs/` 中的模型与结果文件
-            - 同步流程：本地开发 -> GitHub -> Windows `git pull`
-            """
-        )
-    with right:
-        st.subheader("当前状态")
+    flow_col, status_col = st.columns([1.35, 0.95])
+    with flow_col:
+        st.markdown('<div class="section-label">Workflow</div>', unsafe_allow_html=True)
+        st.plotly_chart(_build_workflow_figure(), use_container_width=True)
+    with status_col:
+        st.markdown('<div class="section-label">Current Model</div>', unsafe_allow_html=True)
+        st.markdown('<div class="app-card">', unsafe_allow_html=True)
         if bundle:
             st.success(f"已激活模型：`{bundle.model_name}`")
             st.write(f"Checkpoint: `{bundle.checkpoint_path}`")
             st.write(f"数据目录：`{bundle.config['data']['root']}`")
             st.write(f"运行设备：`{bundle.device}`")
+            st.write(f"图像尺寸：`{bundle.image_size}`")
+            st.write(f"类别数：`{len(bundle.class_names)}`")
         else:
             st.warning("尚未选择有效 checkpoint。你仍然可以浏览数据集概览、训练看板和历史记录页面。")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    insights_col, history_col = st.columns(2)
+    with insights_col:
+        st.markdown('<div class="section-label">Training Overview</div>', unsafe_allow_html=True)
+        if runs:
+            st.plotly_chart(_build_run_overview_chart(runs), use_container_width=True)
+        else:
+            st.info("当前还没有可展示的训练实验。")
+    with history_col:
+        st.markdown('<div class="section-label">Recognition History</div>', unsafe_allow_html=True)
+        if stats["total_records"] > 0:
+            st.plotly_chart(_build_history_pie(stats), use_container_width=True)
+        else:
+            st.info("历史记录库已初始化，等待新的识别记录写入。")
+
+    module_col, deliverable_col = st.columns(2)
+    with module_col:
+        st.markdown('<div class="section-label">功能模块矩阵</div>', unsafe_allow_html=True)
+        module_df = pd.DataFrame(
+            [
+                {"模块": "单图识别", "能力": "上传图片、Top-K 预测、CSV 导出", "状态": "已完成"},
+                {"模块": "批量识别", "能力": "多图批处理、统计图、导出", "状态": "已完成"},
+                {"模块": "视频识别", "能力": "抽帧分类、汇总类别、逐帧明细", "状态": "已完成"},
+                {"模块": "训练看板", "能力": "Loss/Accuracy 曲线与实验结果", "状态": "已完成"},
+                {"模块": "历史记录", "能力": "SQLite 持久化与页面查询", "状态": "已完成"},
+                {"模块": "局域网访问", "能力": "0.0.0.0 监听与固定端口", "状态": "已完成"},
+            ]
+        )
+        st.dataframe(module_df, use_container_width=True, hide_index=True)
+    with deliverable_col:
+        st.markdown('<div class="section-label">项目交付亮点</div>', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="app-card">
+            <p><strong>1. 毕设式首页呈现：</strong> 封面区、亮点标签、流程图、训练概览和识别历史全都集中展示。</p>
+            <p><strong>2. 识别闭环：</strong> 图片、批量图片、视频三条推理链路统一复用本地 checkpoint。</p>
+            <p><strong>3. 项目化输出：</strong> 训练日志、推理结果、导出文件、历史库和 Web 端运行产物可完整留档。</p>
+            <p><strong>4. 课堂演示友好：</strong> Windows 本地启动后，同一局域网设备可直接访问展示页面。</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def render_image_page() -> None:

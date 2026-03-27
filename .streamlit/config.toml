@@ -1,0 +1,16 @@
+[server]
+headless = true
+address = "0.0.0.0"
+port = 8507
+runOnSave = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#8c5b28"
+backgroundColor = "#f7f2e8"
+secondaryBackgroundColor = "#fffaf2"
+textColor = "#3d2416"
+font = "serif"

@@ -126,6 +126,19 @@ python predict.py --checkpoint outputs/resnet18_tcm/best.pt --image "D:\project\
 streamlit run app.py
 ```
 
+项目已经内置 `.streamlit/config.toml`，默认就是：
+
+- `0.0.0.0` 监听
+- 端口 `8507`
+- 适合局域网访问
+
+启动后可在 Windows 本机和同一局域网设备访问：
+
+```text
+http://127.0.0.1:8507
+http://<Windows局域网IP>:8507
+```
+
 ### 2. 页面说明
 
 - 首页：项目介绍、能力概览、快速入口
@@ -198,6 +211,12 @@ cd /d D:\project\resnet-tcm-fine-grained-classification
 git pull
 pip install -r requirements.txt
 streamlit run app.py
+```
+
+如果你希望确保 Windows 防火墙放行 8507 端口，可执行一次：
+
+```powershell
+netsh advfirewall firewall add rule name="TCM Streamlit 8507" dir=in action=allow protocol=TCP localport=8507
 ```
 
 ## 备注
