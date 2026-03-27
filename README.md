@@ -1,85 +1,99 @@
 # 基于 ResNet 的中药细粒度分类
 
-这是一个从零搭建的 PyTorch 项目，用于在 `50类中草药数据集` 上进行中药图像细粒度分类。项目默认使用 `ResNet50` 作为骨干网络，内置训练、验证、测试和单图预测脚本，并且默认对接你当前 Windows 机器上的数据目录：
+这是一个面向课程展示和项目交付的中药图像分类项目。仓库现在同时包含两套入口：
+
+- CLI：训练、评估、单图预测
+- Web：基于 Streamlit 的多页面展示端，支持图片识别、批量识别、视频抽帧识别、数据集概览、训练结果看板和识别历史
+
+默认数据目录仍然使用你当前 Windows 机器上的：
 
 `D:\project\caoyao\50类中草药数据集\split_dataset`
 
-目前已按环境核对过：
+## 项目能力
 
-- 数据集共有 50 个类别。
-- `split_dataset` 已包含 `train / val / test` 三个切分。
-- 远端 Windows 机器有 Git、Python 和 NVIDIA RTX 4060 Ti。
+- 支持 `resnet18 / resnet34 / resnet50 / resnet101`
+- 自动读取 `ImageFolder` 数据集结构
+- 自动保存 `best.pt`、`last.pt`、训练历史与测试指标
+- 训练、评估、预测全流程日志
+- 训练双层进度条：`epoch 总进度 + train/val/test batch 进度`
+- Streamlit 多页面展示系统
+- 单图识别、批量图片识别、视频抽帧识别
+- 训练结果看板、数据集概览、系统信息页
+- SQLite 持久化识别历史
 
 ## 项目结构
 
 ```text
 .
+├── app.py
 ├── configs/
 │   └── default.yaml
+├── pages/
+│   ├── 01_image_recognition.py
+│   ├── 02_batch_recognition.py
+│   ├── 03_video_recognition.py
+│   ├── 04_dataset_overview.py
+│   ├── 05_training_dashboard.py
+│   ├── 06_recognition_history.py
+│   └── 07_system_info.py
 ├── src/
 │   └── caoyao_resnet/
 │       ├── config.py
 │       ├── data.py
 │       ├── engine.py
+│       ├── history_store.py
+│       ├── inference_service.py
+│       ├── logging_utils.py
 │       ├── models.py
+│       ├── project_service.py
+│       ├── streamlit_views.py
 │       └── utils.py
 ├── evaluate.py
 ├── predict.py
 ├── requirements.txt
+├── streamlit_bootstrap.py
 └── train.py
 ```
 
-## 主要功能
+## 依赖安装
 
-- 支持 `resnet18 / resnet34 / resnet50 / resnet101`
-- 自动读取 `ImageFolder` 目录结构
-- 自动保存 `best.pt` 和 `last.pt`
-- 自动输出训练历史、数据集摘要、测试集指标
-- 训练、评估、预测全流程日志
-- 训练双层进度条（epoch 总进度 + train/val/test batch 进度）
-- 支持单图 Top-K 预测
-- 支持快速验证模式，只跑前几个 batch 检查环境
+### Windows 环境
 
-## Windows 推荐运行方式
-
-建议先创建独立环境，再安装依赖。
-
-### 1. 创建环境
+建议继续使用你已经验证通过的环境：
 
 ```powershell
 conda create -n caoyao-resnet python=3.10 -y
 conda activate caoyao-resnet
-```
-
-### 2. 安装依赖
-
-对你现在这台带 `RTX 4060 Ti` 的 Windows 机器，建议直接安装 PyTorch 官方 CUDA 12.6 轮子，再安装项目依赖：
-
-```powershell
 pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
 pip install -r requirements.txt
 ```
 
-如果只是想走 CPU，可以改成：
+### 新增 Web 端依赖
+
+`requirements.txt` 已包含：
+
+- `streamlit`
+- `pandas`
+- `plotly`
+- `opencv-python-headless`
+
+如果你之前环境里只装过训练依赖，更新代码后请重新执行一次：
 
 ```powershell
-pip install torch torchvision
 pip install -r requirements.txt
 ```
 
-之所以这里不直接推荐通用命令，是因为在这台机器上实测通用安装容易落到 `+cpu` 版本，导致无法调用显卡。
+## CLI 运行方式
 
-### 3. 快速验证环境
-
-第一次建议先跑一个超短的 sanity check：
+### 1. 快速验证环境
 
 ```powershell
 python train.py --epochs 1 --batch-size 8 --model-name resnet18 --limit-train-batches 2 --limit-val-batches 1 --limit-test-batches 1
 ```
 
-这条命令只会跑极少量 batch，用来确认数据读取、模型前向、保存 checkpoint 都正常。
+### 2. 正式训练
 
-### 4. 正式训练
+默认是 `resnet50`：
 
 ```powershell
 python train.py
@@ -92,55 +106,103 @@ python train.py --model-name resnet18
 python train.py --model-name resnet101
 ```
 
-## 评估与预测
-
-### 测试集评估
+### 3. 测试集评估
 
 ```powershell
 python evaluate.py --checkpoint outputs/resnet18_tcm/best.pt --split test
 ```
 
-### 单图预测
+### 4. 单图预测
 
 ```powershell
-python predict.py --checkpoint outputs/resnet18_tcm/best.pt --image "D:\project\caoyao\50类中草药数据集\split_dataset\test\乌梅\1.jpg" --top-k 5
+python predict.py --checkpoint outputs/resnet18_tcm/best.pt --image "D:\project\caoyao\50类中草药数据集\split_dataset\test\乌梅\乌梅_101.jpg" --top-k 5
 ```
 
-## 配置说明
+## Streamlit Web 运行方式
 
-默认配置文件位于 `configs/default.yaml`，可调整的核心参数包括：
+### 1. 启动应用
 
-- 数据根目录
-- 图像尺寸
-- batch size
-- 训练轮数
-- 学习率
-- 模型名称
-- dropout
-- 是否启用混合精度
+```powershell
+streamlit run app.py
+```
 
-## 输出结果
+### 2. 页面说明
 
-训练完成后会在对应实验目录下生成，例如 `outputs/resnet18_tcm/` 或 `outputs/resnet50_tcm/`：
+- 首页：项目介绍、能力概览、快速入口
+- 单图识别：上传一张图片，输出 Top-K 结果
+- 批量图片识别：上传多张图片，生成结果表和 CSV
+- 视频识别：上传视频，按秒抽帧分类并输出汇总
+- 数据集概览：展示训练/验证/测试样本分布和样例图片
+- 训练结果看板：展示训练曲线、验证准确率和测试指标
+- 识别历史：查看单图/批量/视频识别历史
+- 系统信息：查看当前模型、设备、数据库和实验信息
 
-- `best.pt`：验证集最优模型
-- `last.pt`：最后一个 epoch 模型
-- `history.json`：训练历史
-- `dataset_summary.json`：类别与样本统计
-- `test_metrics.json`：测试集评估结果
-- `train.log`：训练完整日志
-- `evaluate_<split>.log`：评估日志
-- `predict_<image_stem>.log`：预测日志
+### 3. 模型选择规则
+
+- Web 应用默认扫描 `outputs/*/best.pt`
+- 页面左侧可以直接选择已发现模型
+- 也可以手动输入 checkpoint 路径
+- 不会自动下载模型，也不会把 `.pt` 提交到 GitHub
+
+## 输出目录
+
+### 训练输出
+
+训练完成后会在对应实验目录下生成，例如：
+
+- `outputs/resnet18_tcm/`
+- `outputs/resnet50_tcm/`
+
+其中包含：
+
+- `best.pt`
+- `last.pt`
+- `history.json`
+- `dataset_summary.json`
+- `resolved_config.yaml`
+- `test_metrics.json`
+- `train.log`
+- `evaluate_<split>.log`
+- `predict_<image_stem>.log`
+
+### Web 应用输出
+
+Web 端附加产物保存在：
+
+- `outputs/webapp/app_history.db`：SQLite 历史记录数据库
+- `outputs/webapp/exports/`：批量识别、视频识别等导出的 CSV
+
+## 默认命名规则
+
+- 如果未显式传 `--run-name`，训练输出目录会默认跟随模型名
+- 例如：
+  - `--model-name resnet18` -> `outputs/resnet18_tcm`
+  - `--model-name resnet50` -> `outputs/resnet50_tcm`
+
+同一个 `run_name` 会持续写入最新的模型和 JSON 结果；日志文件会追加。
+
+## 同步流程
+
+本地开发完成后：
+
+```powershell
+git add .
+git commit -m "your message"
+git push
+```
+
+Windows 端同步：
+
+```powershell
+cd /d D:\project\resnet-tcm-fine-grained-classification
+git pull
+pip install -r requirements.txt
+streamlit run app.py
+```
 
 ## 备注
 
-- Windows 下 `num_workers` 默认会自动回落到 `0`，优先保证兼容性。
-- 如果你把数据目录改到别的位置，可通过 `--data-root` 参数覆盖。
-- 如果你要断点续训，可用 `--resume outputs/resnet50_tcm/last.pt`，或者改成对应模型的目录名。
-- 如果未显式传 `--run-name`，输出目录会默认跟随当前模型名，例如 `resnet18_tcm`。
-- Windows 上更新代码后可直接执行：
-
-```powershell
-git pull
-python train.py --help
-```
+- Windows 下 `num_workers` 默认会自动回落到 `0`
+- 如果数据目录改了，可通过 CLI 的 `--data-root` 覆盖
+- 如果要断点续训，可用 `--resume outputs/resnet50_tcm/last.pt`
+- Web 端默认依赖本地已有 checkpoint；建议先完成至少一次训练再启动识别页面

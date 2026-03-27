@@ -4,3 +4,7 @@ PyYAML>=6.0.1
 tqdm>=4.67.1
 Pillow>=10.4.0
 numpy>=2.2.0
+streamlit>=1.44.0
+pandas>=2.2.3
+plotly>=6.0.0
+opencv-python-headless>=4.11.0.86
